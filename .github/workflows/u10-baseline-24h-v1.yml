@@ -1,0 +1,222 @@
+name: U10 Baseline 24H V1
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: u10-baseline-24h-v1-obs-20261007-01
+  cancel-in-progress: false
+
+env:
+  SESSION_ID: obs-20261007-01
+  SYMBOLS: PEPEUSDT,BNBUSDT,AAVEUSDT,AVAXUSDT,FILUSDT,ALGOUSDT,XRPUSDT,HBARUSDT
+  MODE: LIGHT
+
+jobs:
+  prepare:
+    if: github.repository == 'VahramSargsyan/SecondTextRep' && github.event.pull_request.number == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      run: ${{ steps.claim.outputs.run }}
+    steps:
+      - name: Checkout worker candidate
+        uses: actions/checkout@v4
+
+      - name: Checkout market-data lane
+        uses: actions/checkout@v4
+        with:
+          ref: market-data
+          path: data-state
+          fetch-depth: 0
+
+      - name: Claim observation session
+        id: claim
+        run: |
+          set -euo pipefail
+          CLAIM="data-state/data/sessions/${SESSION_ID}/STARTED.json"
+          if [ -f "${CLAIM}" ]; then
+            echo "Session already claimed; refusing duplicate launch."
+            echo "run=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "run=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Install runtime dependency
+        if: steps.claim.outputs.run == 'true'
+        run: python -m pip install -r requirements.txt
+
+      - name: Preflight all eight markets
+        if: steps.claim.outputs.run == 'true'
+        run: >-
+          python collector/market_data_worker.py smoke
+          --output-root preflight-output
+          --symbols "${SYMBOLS}"
+          --duration-seconds 30
+
+      - name: Persist claim and preflight evidence
+        if: steps.claim.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          DEST="data-state/data/sessions/${SESSION_ID}"
+          mkdir -p "${DEST}/preflight"
+          cp preflight-output/smoke_summary.json "${DEST}/preflight/smoke_summary.json"
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          session_id = os.environ["SESSION_ID"]
+          payload = {
+              "capability_id": "U10_EX_TWT_TRX_BASELINE_24H_V1",
+              "session_id": session_id,
+              "status": "RUNNING",
+              "mode": os.environ["MODE"],
+              "symbols": os.environ["SYMBOLS"].split(","),
+              "requested_collection_hours": 24,
+              "segment_count": 6,
+              "segment_hours": 4,
+              "started_at_utc": datetime.now(timezone.utc).isoformat(),
+              "source_pr": 1,
+              "source_sha": os.environ.get("GITHUB_SHA"),
+          }
+          path = Path("data-state/data/sessions") / session_id / "STARTED.json"
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+          cd data-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/sessions
+          git commit -m "market-data: start bounded baseline ${SESSION_ID} [skip ci]"
+          git pull --rebase origin market-data
+          git push origin HEAD:market-data
+
+  collect:
+    needs: prepare
+    if: needs.prepare.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 270
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        segment: [1, 2, 3, 4, 5, 6]
+    steps:
+      - name: Checkout worker candidate
+        uses: actions/checkout@v4
+
+      - name: Checkout market-data lane
+        uses: actions/checkout@v4
+        with:
+          ref: market-data
+          path: data-state
+          fetch-depth: 0
+
+      - name: Install runtime dependency
+        run: python -m pip install -r requirements.txt
+
+      - name: Collect four-hour LIGHT segment
+        run: >-
+          python collector/market_data_worker.py collect
+          --output-root segment-output
+          --session-id "${SESSION_ID}"
+          --symbols "${SYMBOLS}"
+          --mode "${MODE}"
+          --duration-seconds 14400
+          --sample-interval-seconds 60
+
+      - name: Persist segment evidence
+        run: |
+          set -euo pipefail
+          SEG="${{ matrix.segment }}"
+          DEST="data-state/data/sessions/${SESSION_ID}/segments/${SEG}"
+          mkdir -p "${DEST}"
+          cp -R "segment-output/sessions/${SESSION_ID}/." "${DEST}/"
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          segment = os.environ["SEGMENT_NUMBER"]
+          root = Path("data-state/data/sessions") / os.environ["SESSION_ID"] / "segments" / segment
+          payload = {
+              "segment": int(segment),
+              "persisted_at_utc": datetime.now(timezone.utc).isoformat(),
+              "github_run_id": os.environ.get("GITHUB_RUN_ID"),
+              "github_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+          }
+          (root / "PERSISTED.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          cd data-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/sessions
+          git commit -m "market-data: baseline ${SESSION_ID} segment ${SEG} [skip ci]"
+          git pull --rebase origin market-data
+          git push origin HEAD:market-data
+        env:
+          SEGMENT_NUMBER: ${{ matrix.segment }}
+
+  finalize:
+    needs: collect
+    if: needs.collect.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout market-data lane
+        uses: actions/checkout@v4
+        with:
+          ref: market-data
+          path: data-state
+          fetch-depth: 0
+
+      - name: Persist completion marker
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import csv, json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          session_id = os.environ["SESSION_ID"]
+          root = Path("data-state/data/sessions") / session_id
+          total_rows = 0
+          symbols = set()
+          sequence_gaps = 0
+          for csv_path in root.glob("segments/*/*/*/market_aggregates.csv"):
+              with csv_path.open(newline="", encoding="utf-8") as handle:
+                  reader = csv.DictReader(handle)
+                  for row in reader:
+                      total_rows += 1
+                      symbols.add(row["symbol"])
+          for manifest_path in root.glob("segments/*/segment_manifest.json"):
+              data = json.loads(manifest_path.read_text(encoding="utf-8"))
+              sequence_gaps += int(data.get("sequence_gap_count", 0))
+          payload = {
+              "capability_id": "U10_EX_TWT_TRX_BASELINE_24H_V1",
+              "session_id": session_id,
+              "status": "COMPLETED",
+              "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+              "requested_collection_hours": 24,
+              "segments_completed": 6,
+              "aggregate_rows": total_rows,
+              "symbols_seen": sorted(symbols),
+              "sequence_gap_count": sequence_gaps,
+          }
+          (root / "COMPLETED.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+          cd data-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/sessions
+          git commit -m "market-data: complete baseline ${SESSION_ID} [skip ci]"
+          git pull --rebase origin market-data
+          git push origin HEAD:market-data
