@@ -120,3 +120,80 @@ STOP_CONDITIONS: private strategy data would need to enter the public repo; paid
 AUTHORIZATION_END: block report after candidate + technical evidence are prepared.
 
 UNRESOLVED_DECISIONS: `NONE` for this V1 block.
+
+
+## Follow-on observation — U10_EX_TWT_TRX_BASELINE_24H_V1
+
+CAPABILITY_ID: `U10_EX_TWT_TRX_BASELINE_24H_V1`
+
+USER_RESULT: collect the first 24 hours of LIGHT baseline order-book evidence for the eight currently discussed U10 markets not already covered by the separate TWT/TRX 72h experiment.
+
+WORKFLOW_MODE: `PRODUCTION_OBSERVATION`
+
+RISK_CLASS: `L2` — public market-data observation only; no private strategy state and no real orders.
+
+BASE_COMMIT / OWNER_BRANCH / TEST_TARGET:
+- worker candidate base: `fba4f999ec9d09f83599f6d7c64ae567e12413db`;
+- owner branch: `feature/event-driven-market-data-worker-v1`;
+- data branch: `market-data`;
+- session id: `obs-20261007-01`;
+- test target: all-market public Binance smoke before the 24h chain, then six sequential 4h collection segments.
+
+SCOPE:
+- symbols: `PEPEUSDT,BNBUSDT,AAVEUSDT,AVAXUSDT,FILUSDT,ALGOUSDT,XRPUSDT,HBARUSDT`;
+- mode: `LIGHT`;
+- saved aggregate cadence: 60 seconds;
+- incoming public streams remain depth@100ms + aggTrade + bookTicker;
+- six bounded 4-hour segments = 24 hours of requested collection time;
+- persist normalized aggregate evidence and manifests on `market-data`;
+- preserve TWT/TRX exclusion because those markets are already under the separate CryptoSignals observation.
+
+OUT_OF_SCOPE / DO_NOT_TOUCH:
+- no TWT/TRX collection in this session;
+- no `CryptoSignals` code or visibility change;
+- no private rotation trigger/reason/portfolio state;
+- no START/STOP sender integration from the private repository;
+- no authenticated Binance endpoints;
+- no real-money orders;
+- no indefinite collection;
+- no raw event-by-event L2 archive.
+
+SHARED_HOTSPOTS:
+- GitHub-hosted runner capacity;
+- public Binance market-data availability;
+- `market-data` branch writes are serialized by the observation workflow.
+
+CANONICAL / SCHEMA_IMPACT:
+- new isolated observation session using the existing worker aggregate schema;
+- no strategy/schema migration.
+
+MIGRATION_PLAN: `NONE`.
+
+ACCEPTANCE / REQUIRED_EVIDENCE:
+1. preflight live smoke sees usable rows for all eight symbols with zero sequence gaps;
+2. observation session claim is persisted before long-running segments start;
+3. six sequential 4h segments complete;
+4. each segment persists a manifest and aggregate CSV evidence;
+5. final completion marker records the session as complete;
+6. no TWT/TRX rows are present in this session;
+7. no private strategy data appears in public payloads/logs/files.
+
+ROLLBACK / STOP:
+- if preflight smoke fails, do not start the 24h chain;
+- if a segment fails, fail-fast stops later matrix segments;
+- partial evidence remains labeled incomplete and may be inspected rather than silently promoted;
+- no automatic restart after failure.
+
+AUTHORIZED_ACTIONS: current assistant may add/start this bounded observation workflow and inspect its launch state. No extra executor, paid API, private-repository mutation, real trading, or PROD strategy change is authorized.
+
+EXECUTOR_PERMISSION: current ChatGPT assistant only.
+
+PAID_API_BUDGET: `0`.
+
+REPAIR_LIMIT: at most two focused evidence-producing repair cycles.
+
+STOP_CONDITIONS: smoke failure after two substantive repairs, authenticated/paid market data becomes required, private strategy data would need to be exposed, real-order scope appears, or GitHub runner/push permissions prevent safe persistence.
+
+AUTHORIZATION_END: launch confirmation and block report; the GitHub workflow may continue independently for its bounded 24h observation.
+
+UNRESOLVED_DECISIONS: `NONE`.
