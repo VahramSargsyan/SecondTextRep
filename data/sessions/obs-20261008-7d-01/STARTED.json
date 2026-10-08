@@ -1,0 +1,24 @@
+{
+  "capability_id": "PUBLIC_10_MARKET_BASELINE_7D_V1",
+  "mode": "LIGHT",
+  "requested_collection_hours": 168,
+  "segment_count": 42,
+  "segment_hours": 4,
+  "session_id": "obs-20261008-7d-01",
+  "source_pr": 1,
+  "source_sha": "278a40b233ee58d202be9764ad6f56d4be49dfa9",
+  "started_at_utc": "2026-10-08T16:16:29.111579+00:00",
+  "status": "RUNNING",
+  "symbols": [
+    "TWTUSDT",
+    "PEPEUSDT",
+    "BNBUSDT",
+    "TRXUSDT",
+    "AAVEUSDT",
+    "AVAXUSDT",
+    "FILUSDT",
+    "ALGOUSDT",
+    "XRPUSDT",
+    "HBARUSDT"
+  ]
+}
