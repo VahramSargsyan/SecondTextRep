@@ -197,3 +197,52 @@ STOP_CONDITIONS: smoke failure after two substantive repairs, authenticated/paid
 AUTHORIZATION_END: launch confirmation and block report; the GitHub workflow may continue independently for its bounded 24h observation.
 
 UNRESOLVED_DECISIONS: `NONE`.
+
+
+## Follow-on bounded observation — PUBLIC_10_MARKET_BASELINE_7D_V1
+
+CAPABILITY_ID: `PUBLIC_10_MARKET_BASELINE_7D_V1`
+
+USER_RESULT: collect seven successive days of public Spot order-book statistics for ten named USDT markets, measuring both replenishment and hypothetical fixed-notional sell/buy execution costs to inform later private research. The data worker receives only public symbols and an opaque session identifier, not any private strategy, allocation, trigger, account or threshold.
+
+WORKFLOW_MODE: `IMPLEMENT_FEATURE` (the new finite observation workflow and additive research measurements), then bounded public-data observation only.
+
+RISK_CLASS: `L3` (financial research conclusions, multi-day hosted workflow, and public disclosure of the observed tickers).
+
+BASE_COMMIT: `9274e902e7e49bb5d851acfb36bb09c9d6d96dc2`; OWNER_BRANCH: `feature/event-driven-market-data-worker-v1`; PR: `#1` remains DRAFT, not merged to main. TEST_TARGET: PR GitHub Actions, market-data isolated lane, Python deterministic tests and public Binance smoke.
+
+SCOPE:
+- session id `obs-20261008-07d-01` contains no strategic reason;
+- markets: `TWTUSDT,PEPEUSDT,BNBUSDT,TRXUSDT,AAVEUSDT,AVAXUSDT,FILUSDT,ALGOUSDT,XRPUSDT,HBARUSDT`;
+- `LIGHT` aggregate cadence of 60 seconds, consuming 100ms depth updates, aggTrade and bookTicker;
+- bounded 42 four-hour segments (requested collection 168 hours), max one concurrent segment; one preflight smoke for all ten; each segment persists independent evidence;
+- new additive columns: static-book sell and buy mid-relative execution costs (bps) for 10k, 50k, 100k, 250k and 500k USD; empty means not fully fillable using stored visible L2; these exclude trading fees and future drift;
+- persist metadata, per-symbol coverage and fail-closed final completeness checks on `market-data`, without rewriting the historical 24h baseline data;
+- existing 72h TWT/TRX private-repository observation remains unchanged and may overlap in collection time.
+
+OUT_OF_SCOPE / DO_NOT_TOUCH:
+- no strategy algorithms, signal inputs, universe membership, portfolio data, holdings, reasons, Telegram, private repository visibility, authenticated Binance endpoints or real orders;
+- no unbounded running, no raw depth-event archive in Git, no assertion that visible-book costs predict true execution;
+- no automatic production promotion; the existing draft PR is not merged by this task.
+
+SHARED_HOTSPOTS: branch feature PR CI, GitHub Actions runner concurrency, public Binance capacity, `market-data` write lane, concurrent 72h TWT/TRX observer.
+
+SCHEMA_IMPACT: strictly additive columns for the *new* isolated 7d research output; old CSV schema and canonical private strategy untouched. MIGRATION_PLAN: none; rollback by cancelling the exact workflow run, no legacy deletion.
+
+ACCEPTANCE:
+1. deterministic depth-walk tests and original worker tests PASS;
+2. preflight live smoke receives all ten symbols, nonempty depth and zero detected sequence gaps before claiming the session;
+3. each of 42 four-hour segments persists a manifest and rows for all ten with at least 90% of theoretical minute count and zero sequence gaps;
+4. final audit uses correct `segments/*/*/market_aggregates.csv` path and verifies 42 unique segments, per-symbol coverage, zero gaps, and observed span at least 167 hours;
+5. final status is `COMPLETED` only when checks pass; otherwise `INCOMPLETE` with errors;
+6. generated evidence contains no private strategy capital size, event rationale or trading signals. Notional test levels are generic public liquidity research parameters, not account holdings.
+
+ROLLBACK: cancel the specific GitHub Actions workflow run and retire draft new workflow, retain bounded partial evidence labelled incomplete; existing 24h session and 72h project observer unchanged. No data migration.
+
+AUTHORIZED_ACTIONS: user requested beginning a bounded seven-day observation. The current assistant may add generic public metrics, run safety checks, and start exactly one bounded seven-day workflow under the existing draft PR. No additional AI executor, authenticated API, paid API, or PROD changes.
+
+EXECUTOR_PERMISSION: current assistant only for authoring; GitHub Actions may execute bounded standard collection CI as requested, not additional Codex/AI agents.
+
+PAID_API_BUDGET: 0. REPAIR_LIMIT: at most two focused cycles. STOP_CONDITIONS: permission error; preflight fails; missing market; incomplete segment or sequence error; unauthorized public disclosure beyond public market symbols; repo/main promotion required; actual costs/capacity cannot be supported by available data.
+
+AUTHORIZATION_END: launch receipt and exact technical block report. The platform-hosted collection may run according to its explicitly bounded duration; no continuing autonomous assistant work is promised.
