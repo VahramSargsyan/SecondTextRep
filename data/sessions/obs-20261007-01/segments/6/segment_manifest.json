@@ -1,0 +1,35 @@
+{
+  "capability_id": "EVENT_DRIVEN_MARKET_DATA_WORKER_V1",
+  "control_poll_error_count": 0,
+  "dependency": {
+    "license": "BSD-3-Clause",
+    "websockets": "17.2"
+  },
+  "ended_at_utc": "2026-10-08T14:03:14.729493+00:00",
+  "interpretation_boundary": [
+    "Public Binance Spot market-data collection only; no real orders.",
+    "V1 stores normalized aggregate snapshots rather than every raw depth event.",
+    "USDC-quoted values are normalized with the observed USDCUSDT book ticker.",
+    "A market keeps its own statistical profile; this collector does not apply trading thresholds."
+  ],
+  "mode": "LIGHT",
+  "reconnect_count": 1,
+  "sample_interval_seconds": 60,
+  "sample_row_count": 1920,
+  "segment_requested_seconds": 14400,
+  "sequence_gap_count": 0,
+  "session_id": "obs-20261007-01",
+  "started_at_utc": "2026-10-08T10:03:09.709530+00:00",
+  "status": "SEGMENT_COMPLETE",
+  "stop_reason": "segment_complete",
+  "symbols": [
+    "PEPEUSDT",
+    "BNBUSDT",
+    "AAVEUSDT",
+    "AVAXUSDT",
+    "FILUSDT",
+    "ALGOUSDT",
+    "XRPUSDT",
+    "HBARUSDT"
+  ]
+}
