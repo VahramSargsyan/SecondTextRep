@@ -1,0 +1,245 @@
+name: Market Data Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: START, UPDATE, or STOP
+        type: choice
+        required: true
+        options: [START, UPDATE, STOP]
+      session_id:
+        description: Opaque session id; do not encode strategy meaning
+        type: string
+        required: true
+      symbols:
+        description: Comma-separated USDT/USDC markets; ignored for STOP
+        type: string
+        required: false
+        default: ''
+      mode:
+        description: Collection mode; ignored for STOP
+        type: choice
+        required: false
+        default: WATCH
+        options: [LIGHT, WATCH, BURST]
+      segment_seconds:
+        description: Bounded segment duration, 30-3600 seconds
+        type: string
+        required: false
+        default: '900'
+  repository_dispatch:
+    types: [market_data_control, market_data_segment]
+
+permissions:
+  contents: write
+
+jobs:
+  control:
+    if: github.event_name == 'workflow_dispatch' || github.event.action == 'market_data_control'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: market-data-control-${{ github.event_name == 'workflow_dispatch' && inputs.session_id || github.event.client_payload.session_id }}
+      cancel-in-progress: false
+    env:
+      COMMAND: ${{ github.event_name == 'workflow_dispatch' && inputs.command || github.event.client_payload.command }}
+      SESSION_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.session_id || github.event.client_payload.session_id }}
+      SYMBOLS: ${{ github.event_name == 'workflow_dispatch' && inputs.symbols || github.event.client_payload.symbols }}
+      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event.client_payload.mode }}
+      SEGMENT_SECONDS: ${{ github.event_name == 'workflow_dispatch' && inputs.segment_seconds || github.event.client_payload.segment_seconds || '900' }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout worker code
+        uses: actions/checkout@v4
+
+      - name: Checkout runtime control state
+        uses: actions/checkout@v4
+        with:
+          ref: runtime-control
+          path: control-state
+          fetch-depth: 0
+
+      - name: Apply control command
+        run: |
+          set -euo pipefail
+          python collector/control_state.py \
+            --state-file "control-state/runtime/sessions/${SESSION_ID}.json" \
+            --session-id "${SESSION_ID}" \
+            --command "${COMMAND}" \
+            --symbols "${SYMBOLS}" \
+            --mode "${MODE}" \
+            --segment-seconds "${SEGMENT_SECONDS}" \
+            --result-file /tmp/control-result.json
+
+      - name: Persist control state
+        run: |
+          set -euo pipefail
+          cd control-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime/sessions
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "runtime-control: ${COMMAND} ${SESSION_ID} [skip ci]"
+          git pull --rebase origin runtime-control
+          git push origin HEAD:runtime-control
+
+      - name: Start first segment when needed
+        run: |
+          set -euo pipefail
+          SHOULD_DISPATCH=$(python -c 'import json; print(str(json.load(open("/tmp/control-result.json"))["should_dispatch"]).lower())')
+          if [ "${SHOULD_DISPATCH}" = "true" ]; then
+            python collector/dispatch_event.py \
+              --event-type market_data_segment \
+              --session-id "${SESSION_ID}"
+          fi
+
+  segment:
+    if: github.event_name == 'repository_dispatch' && github.event.action == 'market_data_segment'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    env:
+      SESSION_ID: ${{ github.event.client_payload.session_id }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout worker code
+        uses: actions/checkout@v4
+
+      - name: Checkout runtime control state
+        uses: actions/checkout@v4
+        with:
+          ref: runtime-control
+          path: control-state
+          fetch-depth: 0
+
+      - name: Checkout market-data branch
+        uses: actions/checkout@v4
+        with:
+          ref: market-data
+          path: data-state
+          fetch-depth: 0
+
+      - name: Read desired state
+        id: state
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          session_id = os.environ["SESSION_ID"]
+          path = Path("control-state/runtime/sessions") / f"{session_id}.json"
+          state = json.loads(path.read_text(encoding="utf-8"))
+          if state.get("desired_state") != "RUNNING":
+              print("Session is not RUNNING; segment exits without collection")
+              with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+                  out.write("run=false\n")
+              raise SystemExit(0)
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write("SYMBOLS=" + ",".join(state["symbols"]) + "\n")
+              env.write("MODE=" + state["mode"] + "\n")
+              env.write("SEGMENT_SECONDS=" + str(state["segment_seconds"]) + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("run=true\n")
+          PY
+
+      - name: Install runtime dependency
+        if: steps.state.outputs.run == 'true'
+        run: python -m pip install -r requirements.txt
+
+      - name: Collect bounded segment
+        if: steps.state.outputs.run == 'true'
+        id: collect
+        continue-on-error: true
+        env:
+          CONTROL_URL: https://raw.githubusercontent.com/${{ github.repository }}/runtime-control/runtime/sessions/${{ github.event.client_payload.session_id }}.json
+        run: |
+          set +e
+          python collector/market_data_worker.py collect \
+            --output-root segment-output \
+            --session-id "${SESSION_ID}" \
+            --symbols "${SYMBOLS}" \
+            --mode "${MODE}" \
+            --duration-seconds "${SEGMENT_SECONDS}" \
+            --control-url "${CONTROL_URL}" \
+            --control-poll-seconds 15
+          CODE=$?
+          echo "exit_code=${CODE}" >> "${GITHUB_OUTPUT}"
+          exit "${CODE}"
+
+      - name: Persist segment evidence
+        if: steps.state.outputs.run == 'true' && always()
+        run: |
+          set -euo pipefail
+          DEST="data-state/data/sessions/${SESSION_ID}/segments/${GITHUB_RUN_ID}"
+          mkdir -p "${DEST}"
+          if [ -d "segment-output/sessions/${SESSION_ID}" ]; then
+            cp -R "segment-output/sessions/${SESSION_ID}/." "${DEST}/"
+          fi
+          cd data-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/sessions
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "market-data: segment ${SESSION_ID} run ${GITHUB_RUN_ID} [skip ci]"
+          git pull --rebase origin market-data
+          git push origin HEAD:market-data
+
+      - name: Mark failed segment
+        if: steps.state.outputs.run == 'true' && steps.collect.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          git -C control-state pull --rebase origin runtime-control
+          python collector/control_state.py \
+            --state-file "control-state/runtime/sessions/${SESSION_ID}.json" \
+            --session-id "${SESSION_ID}" \
+            --command FAIL \
+            --detail "collector exit code ${{ steps.collect.outputs.exit_code }}"
+          cd control-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime/sessions
+          git commit -m "runtime-control: FAIL ${SESSION_ID} [skip ci]"
+          git pull --rebase origin runtime-control
+          git push origin HEAD:runtime-control
+
+      - name: Refresh control state
+        if: steps.state.outputs.run == 'true' && steps.collect.outcome == 'success'
+        id: refresh
+        run: |
+          set -euo pipefail
+          git -C control-state pull --rebase origin runtime-control
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          session_id = os.environ["SESSION_ID"]
+          state = json.loads((Path("control-state/runtime/sessions") / f"{session_id}.json").read_text())
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write("desired_state=" + str(state.get("desired_state", "UNKNOWN")) + "\n")
+          PY
+
+      - name: Finalize stopped session
+        if: steps.state.outputs.run == 'true' && steps.collect.outcome == 'success' && steps.refresh.outputs.desired_state == 'STOP_REQUESTED'
+        run: |
+          set -euo pipefail
+          python collector/control_state.py \
+            --state-file "control-state/runtime/sessions/${SESSION_ID}.json" \
+            --session-id "${SESSION_ID}" \
+            --command FINALIZE
+          cd control-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime/sessions
+          git commit -m "runtime-control: FINALIZE ${SESSION_ID} [skip ci]"
+          git pull --rebase origin runtime-control
+          git push origin HEAD:runtime-control
+
+      - name: Chain next segment while running
+        if: steps.state.outputs.run == 'true' && steps.collect.outcome == 'success' && steps.refresh.outputs.desired_state == 'RUNNING'
+        run: |
+          set -euo pipefail
+          python collector/dispatch_event.py \
+            --event-type market_data_segment \
+            --session-id "${SESSION_ID}"
