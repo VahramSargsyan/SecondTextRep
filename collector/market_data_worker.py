@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from collector.market_liquidity_capacity import execution_costs_bps
+
 CAPABILITY_ID = "EVENT_DRIVEN_MARKET_DATA_WORKER_V1"
 REST_BASE = "https://data-api.binance.vision"
 WS_BASE = "wss://data-stream.binance.vision/stream?streams="
@@ -374,6 +376,7 @@ def market_rows(
             row[f"ask_depth_{bps}bps_usd"] = book.depth_quote(
                 "ask", band, quote_to_usdt
             )
+        row.update(execution_costs_bps(book, quote_to_usdt))
         rows.append(row)
     return rows
 
@@ -599,6 +602,7 @@ async def collect(
             "V1 stores normalized aggregate snapshots rather than every raw depth event.",
             "USDC-quoted values are normalized with the observed USDCUSDT book ticker.",
             "A market keeps its own statistical profile; this collector does not apply trading thresholds.",
+            "Fixed-notional depth walks are virtual instantaneous costs versus the mid; fees and future market impact are excluded.",
         ],
     }
     write_json(output_root / "sessions" / session_id / "segment_manifest.json", manifest)
