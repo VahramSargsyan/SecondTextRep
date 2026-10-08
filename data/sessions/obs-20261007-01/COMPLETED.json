@@ -1,0 +1,11 @@
+{
+  "aggregate_rows": 0,
+  "capability_id": "U10_EX_TWT_TRX_BASELINE_24H_V1",
+  "completed_at_utc": "2026-10-08T14:03:27.412244+00:00",
+  "requested_collection_hours": 24,
+  "segments_completed": 6,
+  "sequence_gap_count": 0,
+  "session_id": "obs-20261007-01",
+  "status": "COMPLETED",
+  "symbols_seen": []
+}
