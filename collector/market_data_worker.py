@@ -17,7 +17,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from collector.market_liquidity_capacity import execution_costs_bps
+if __package__:
+    from .market_liquidity_capacity import execution_costs_bps
+else:
+    from market_liquidity_capacity import execution_costs_bps
 
 CAPABILITY_ID = "EVENT_DRIVEN_MARKET_DATA_WORKER_V1"
 REST_BASE = "https://data-api.binance.vision"
