@@ -1,0 +1,164 @@
+name: Public Ten-Market Resilient 7D V2
+
+# This is a separate future-session workflow; V1 remains untouched.
+# schedule only repairs a session explicitly started via workflow_dispatch.
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [public_ten_7d_continue_v2]
+  schedule:
+    - cron: '*/15 * * * *'
+
+permissions:
+  contents: write
+
+# A single lease for START/CONTINUE/WATCHDOG; never run concurrent collectors.
+concurrency:
+  group: public-ten-7d-resilience-v2
+  cancel-in-progress: false
+
+env:
+  SESSION_ID: obs-7d-resilience-v2-01
+  SYMBOLS: TWTUSDT,PEPEUSDT,BNBUSDT,TRXUSDT,AAVEUSDT,AVAXUSDT,FILUSDT,ALGOUSDT,XRPUSDT,HBARUSDT
+  MODE: LIGHT
+
+jobs:
+  observe:
+    if: github.repository == 'VahramSargsyan/SecondTextRep'
+    runs-on: ubuntu-latest
+    timeout-minutes: 270
+    steps:
+      - name: Checkout accepted worker source
+        uses: actions/checkout@v4
+      - name: Checkout public market-data lane
+        uses: actions/checkout@v4
+        with:
+          ref: market-data
+          path: data-state
+          fetch-depth: 0
+      - name: Establish plan or detect interrupted segment
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          START_FLAG=""
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then START_FLAG="--allow-start"; fi
+          python collector/seven_day_reliability.py plan \
+            --data-root data-state \
+            --session-id "$SESSION_ID" \
+            $START_FLAG \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Persist explicit session start
+        if: steps.plan.outputs.action == 'collect'
+        run: |
+          set -euo pipefail
+          cd data-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "data/sessions/$SESSION_ID/STARTED.json"
+          if ! git diff --cached --quiet; then
+            git commit -m "market-data: begin resilient observation $SESSION_ID [skip ci]"
+          fi
+          git pull --rebase origin market-data
+          git push origin HEAD:market-data
+
+      - name: Install pinned dependency
+        if: steps.plan.outputs.action == 'collect'
+        run: python -m pip install -r requirements.txt
+
+      - name: Collect with durable 15-minute checkpoints
+        if: steps.plan.outputs.action == 'collect'
+        id: collect
+        env:
+          SEGMENT: ${{ steps.plan.outputs.segment }}
+          DURATION: ${{ steps.plan.outputs.duration_seconds }}
+        run: |
+          set -euo pipefail
+          git -C data-state config user.name "github-actions[bot]"
+          git -C data-state config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          persist() {
+            (
+              cd data-state
+              git add "data/sessions/$SESSION_ID"
+              if ! git diff --cached --quiet; then
+                git commit -m "market-data: V2 checkpoint $SESSION_ID/$SEGMENT [skip ci]"
+              fi
+              for retry in 1 2 3; do
+                git pull --rebase origin market-data
+                if git push origin HEAD:market-data; then exit 0; fi
+                sleep 4
+              done
+              exit 1
+            )
+          }
+          checkpoint() {
+            python collector/seven_day_reliability.py stage \
+              --data-root data-state --session-id "$SESSION_ID" \
+              --segment "$SEGMENT" --run-id "$GITHUB_RUN_ID" \
+              --source "segment-output/sessions/$SESSION_ID"
+            persist
+          }
+          python collector/market_data_worker.py collect \
+            --output-root segment-output \
+            --session-id "$SESSION_ID" \
+            --symbols "$SYMBOLS" \
+            --mode "$MODE" \
+            --sample-interval-seconds 60 \
+            --duration-seconds "$DURATION" &
+          WORKER_PID=$!
+          (
+            trap 'exit 0' TERM INT
+            while kill -0 "$WORKER_PID" 2>/dev/null; do
+              sleep 900
+              if kill -0 "$WORKER_PID" 2>/dev/null; then checkpoint; fi
+            done
+          ) &
+          CHECKPOINT_PID=$!
+          set +e
+          wait "$WORKER_PID"
+          STATUS=$?
+          set -e
+          kill "$CHECKPOINT_PID" 2>/dev/null || true
+          wait "$CHECKPOINT_PID" 2>/dev/null || true
+          checkpoint
+          if [ "$STATUS" -ne 0 ]; then
+            echo "Collector interrupted; staged evidence remains partial, watchdog will retry."
+            exit "$STATUS"
+          fi
+          python collector/seven_day_reliability.py complete \
+            --data-root data-state --session-id "$SESSION_ID" \
+            --segment "$SEGMENT" --run-id "$GITHUB_RUN_ID" \
+            --source "segment-output/sessions/$SESSION_ID"
+          persist
+
+      - name: Continue immediately after a successful segment
+        if: steps.plan.outputs.action == 'collect' && steps.collect.outcome == 'success'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python collector/dispatch_event.py \
+            --event-type public_ten_7d_continue_v2 --session-id "$SESSION_ID"
+
+      - name: Audit exact seven-day observed coverage
+        if: steps.plan.outputs.action == 'finish'
+        run: |
+          set -euo pipefail
+          python collector/seven_day_reliability.py finish \
+            --data-root data-state --session-id "$SESSION_ID" --symbols "$SYMBOLS"
+          cd data-state
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "data/sessions/$SESSION_ID/COMPLETED.json"
+          git commit -m "market-data: finalize resilient 7d evidence $SESSION_ID [skip ci]"
+          git pull --rebase origin market-data
+          git push origin HEAD:market-data
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path=Path('data/sessions')/os.environ['SESSION_ID']/'COMPLETED.json'
+          summary=json.loads(path.read_text())
+          if summary['status'] != 'COMPLETED':
+              raise SystemExit('INCOMPLETE observation — see per_market missing minutes')
+          PY
