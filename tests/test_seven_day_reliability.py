@@ -94,7 +94,8 @@ class SevenDayReliabilityTests(unittest.TestCase):
             self.assertEqual(good["per_market"]["TWTUSDT"]["missing_minutes"], 0)
             # Add a duplicate while removing one minute: total row count unchanged,
             # but coverage must become INCOMPLETE.
-            rows = list(csv.DictReader(path.open(newline="")))
+            with path.open(newline="") as handle:
+                rows = list(csv.DictReader(handle))
             rows = [row for row in rows if not (
                 row["symbol"] == "TRXUSDT" and
                 row["timestamp_utc"] == (START + timedelta(minutes=30)).isoformat()
