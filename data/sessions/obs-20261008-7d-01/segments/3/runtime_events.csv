@@ -1,0 +1,2 @@
+timestamp_utc,event,detail
+2026-10-09T02:38:00.095511+00:00,RECONNECT,"ConnectionClosedError(None, None, None)"
