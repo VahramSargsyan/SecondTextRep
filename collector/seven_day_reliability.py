@@ -144,10 +144,17 @@ def audit(root: Path, expected_symbols: tuple[str, ...]) -> dict:
     start = parse_utc(started["started_at_utc"])
     end = start + timedelta(hours=EXPECTED_HOURS)
     # Compare true UTC-minute coverage, not merely number of rows or timestamp span.
-    first = start.replace(second=0, microsecond=0) + timedelta(minutes=1)
-    expected_minutes = [first + timedelta(minutes=i) for i in range(EXPECTED_HOURS * 60)]
-    # The last bucket is outside the wall-clock observation deadline; remove it.
-    expected = {int(t.timestamp() // 60) for t in expected_minutes if t < end}
+    # Evaluate only complete UTC-minute buckets inside [start, end). Do not
+    # mistake partial boundary minutes for fully observed time.
+    first = start.replace(second=0, microsecond=0)
+    if first < start:
+        first += timedelta(minutes=1)
+    end_exclusive = end.replace(second=0, microsecond=0)
+    expected_count = max(0, int((end_exclusive - first).total_seconds() // 60))
+    expected = {
+        int((first + timedelta(minutes=i)).timestamp() // 60)
+        for i in range(expected_count)
+    }
     minute_sets = {symbol: set() for symbol in expected_symbols}
     seen_rows = Counter()
     sequence_gaps = 0
