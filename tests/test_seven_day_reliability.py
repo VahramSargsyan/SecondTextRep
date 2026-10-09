@@ -75,7 +75,7 @@ class SevenDayReliabilityTests(unittest.TestCase):
             day.mkdir(parents=True)
             (segment / "segment_manifest.json").write_text(json.dumps({
                 "status": "SEGMENT_COMPLETE", "sequence_gap_count": 0,
-                "sample_row_count": 118
+                "sample_row_count": 120
             }))
             (segment / "PERSISTED.json").write_text("{}")
             path = day / "market_aggregates.csv"
@@ -83,7 +83,7 @@ class SevenDayReliabilityTests(unittest.TestCase):
             with path.open("w", newline="") as handle:
                 writer = csv.DictWriter(handle, fieldnames=fields)
                 writer.writeheader()
-                for minute in range(1, 60):
+                for minute in range(0, 60):
                     for symbol in ("TWTUSDT", "TRXUSDT"):
                         writer.writerow({
                             "timestamp_utc": (START + timedelta(minutes=minute)).isoformat(),
