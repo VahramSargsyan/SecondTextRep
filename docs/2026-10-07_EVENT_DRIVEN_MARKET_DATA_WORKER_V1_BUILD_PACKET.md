@@ -246,3 +246,32 @@ EXECUTOR_PERMISSION: current assistant only for authoring; GitHub Actions may ex
 PAID_API_BUDGET: 0. REPAIR_LIMIT: at most two focused cycles. STOP_CONDITIONS: permission error; preflight fails; missing market; incomplete segment or sequence error; unauthorized public disclosure beyond public market symbols; repo/main promotion required; actual costs/capacity cannot be supported by available data.
 
 AUTHORIZATION_END: launch receipt and exact technical block report. The platform-hosted collection may run according to its explicitly bounded duration; no continuing autonomous assistant work is promised.
+
+## Follow-on bounded block — PUBLIC_10_MARKET_RESILIENT_7D_V2
+
+CAPABILITY_ID: PUBLIC_10_MARKET_RESILIENT_7D_V2
+USER_RESULT: Make future 7-day public observations restartable, preserve intermediate evidence, and report exact gaps; do not touch active V1.
+WORKFLOW_MODE: PATCH_FIX (isolated reliability successor). RISK_CLASS: L3 (data-integrity/automation).
+BASE_COMMIT: af4cdc34b56536270b3a4988ec946793911bcb49 (PR #1 candidate).
+OWNER_BRANCH: feature/public-ten-7d-resilience-v2. TEST_TARGET: Python CI, GitHub PR tests, then gated TEST shutdown/restart.
+
+SCOPE:
+- Add separate public-ten-market-7d-resilient-v2.yml; original live V1 workflow/session remain untouched.
+- Only an explicit workflow_dispatch creates STARTED; cron can resume but not independently start a session.
+- Single concurrency group serializes START, repository_dispatch continuation and 15-minute scheduled recovery.
+- Stage public-data partial checkpoints to market-data every 15 minutes; keep attempts separate from completed segment receipts.
+- Persist immutable completed-segment receipt; retry interrupted attempt without claiming missing samples were observed.
+- Validate per-market unique UTC minute coverage, longest missing streak and unresolved sequence gaps.
+- Finalize at the 168-hour wall deadline; mark incomplete evidence INCOMPLETE, not PASS.
+
+OUT_OF_SCOPE: CryptoSignals, V1 active run/session obs-20261008-7d-01, live strategy/trading, Telegram, credentials, paid API, source PR merge.
+DEPENDENCIES: existing public Binance collector, Python stdlib, GitHub Actions, existing market-data branch, existing pinned websockets.
+SCHEMA_IMPACT: additive isolated future session only; no legacy/strategy/schema changes. MIGRATION_PLAN: none.
+ACCEPTANCE: deterministic tests covering explicit-only start, runner shutdown partial, segment retry protection, depth gap failure, and true UTC-minute coverage; GitHub CI; runtime TEST forced shutdown/recovery before adoption.
+ROLLBACK: close/revert V2 PR; once adopted, disable/revert V2 workflow, retain evidence until separate cleanup approval.
+PROMOTION: CANDIDATE -> TECHNICALLY_VERIFIED -> AWAITING_USER_ACCEPTANCE -> separate activation after the V1 run ends.
+EXECUTOR_PERMISSION: current assistant only. PAID_API_BUDGET: 0. REPAIR_LIMIT: 2.
+AUTHORIZED_ACTIONS: isolate feature, create draft PR against current candidate and perform safe tests. No merge, no concurrent new observation, no PROD.
+STOP_CONDITIONS: active V1 endangered, failed required gate after bounded repairs, missing essential access or new external-data/permissions decision.
+AUTHORIZATION_END: candidate PR and technical report.
+RESIDUAL_RISK: GitHub scheduled events may be late or absent. A watchdog cannot reconstruct data never observed. Full GitHub crash/recovery acceptance: NOT_RUN until TEST.
