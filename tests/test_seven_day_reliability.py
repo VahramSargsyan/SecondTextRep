@@ -108,7 +108,7 @@ class SevenDayReliabilityTests(unittest.TestCase):
             incomplete = mod.audit(self.root, ("TWTUSDT", "TRXUSDT"))
             self.assertEqual(incomplete["status"], "INCOMPLETE")
             self.assertEqual(incomplete["per_market"]["TRXUSDT"]["missing_minutes"], 1)
-            self.assertEqual(incomplete["per_market"]["TRXUSDT"]["rows"], 58)
+            self.assertEqual(incomplete["per_market"]["TRXUSDT"]["rows"], 59)
 
 
 if __name__ == "__main__":
