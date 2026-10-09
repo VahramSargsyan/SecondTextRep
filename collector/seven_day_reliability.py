@@ -10,7 +10,10 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from market_data_worker import validate_session_id
+try:
+    from .market_data_worker import validate_session_id
+except ImportError:  # Direct invocation from collector/ directory
+    from market_data_worker import validate_session_id
 
 EXPECTED_HOURS = 168
 SEGMENT_SECONDS = 14400
