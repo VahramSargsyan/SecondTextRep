@@ -1,0 +1,36 @@
+{
+  "aggregate_rows": 100800,
+  "capability_id": "PUBLIC_10_MARKET_BASELINE_7D_V1",
+  "completed_at_utc": "2026-10-15T16:30:58.697266+00:00",
+  "requested_collection_hours": 168,
+  "rows_by_symbol": {
+    "AAVEUSDT": 10080,
+    "ALGOUSDT": 10080,
+    "AVAXUSDT": 10080,
+    "BNBUSDT": 10080,
+    "FILUSDT": 10080,
+    "HBARUSDT": 10080,
+    "PEPEUSDT": 10080,
+    "TRXUSDT": 10080,
+    "TWTUSDT": 10080,
+    "XRPUSDT": 10080
+  },
+  "segments_completed": 42,
+  "sequence_gap_count": 0,
+  "session_id": "obs-20261008-7d-01",
+  "span_hours": 168.21331313777776,
+  "status": "COMPLETED",
+  "symbols_seen": [
+    "AAVEUSDT",
+    "ALGOUSDT",
+    "AVAXUSDT",
+    "BNBUSDT",
+    "FILUSDT",
+    "HBARUSDT",
+    "PEPEUSDT",
+    "TRXUSDT",
+    "TWTUSDT",
+    "XRPUSDT"
+  ],
+  "validation_errors": []
+}
